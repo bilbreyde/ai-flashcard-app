@@ -24,8 +24,13 @@ jobs:
       - name: Install client dependencies and build
         run: cd client && npm install && npm run build
 
-      - name: Remove client node_modules before deploy
-        run: rm -rf client/node_modules
+      - name: Create deployment package
+        run: |
+          mkdir -p deploy
+          cp -r server deploy/server
+          cp -r client/build deploy/client
+          cp package.json deploy/
+          cd deploy && zip -r ../release.zip .
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
@@ -33,6 +38,4 @@ jobs:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
           slot-name: 'Production'
           publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}
-          package: .
-        env:
-          SCM_DO_BUILD_DURING_DEPLOYMENT: false
+          package: release.zip
