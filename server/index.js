@@ -2,7 +2,6 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
-const { getDb } = require("./db");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -20,10 +19,4 @@ if (process.env.NODE_ENV === "production") {
   app.get("*", (req, res) => res.sendFile(path.join(__dirname, "../client/build/index.html")));
 }
 
-// Init DB before starting server
-getDb().then(() => {
-  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-}).catch((err) => {
-  console.error("Failed to initialize database:", err);
-  process.exit(1);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

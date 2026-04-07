@@ -1,80 +1,95 @@
-const initSqlJs = require("sql.js");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
-const DB_PATH = path.join(__dirname, "flashcards.db");
+const DB_PATH = path.join(__dirname, "data.json");
 
-let _db = null;
-
-async function getDb() {
-  if (_db) return _db;
-  const SQL = await initSqlJs();
-  if (fs.existsSync(DB_PATH)) {
-    const fileBuffer = fs.readFileSync(DB_PATH);
-    _db = new SQL.Database(fileBuffer);
-  } else {
-    _db = new SQL.Database();
+function load() {
+  if (!fs.existsSync(DB_PATH)) {
+    const empty = { users: [], sessions: [], question_results: [] };
+    fs.writeFileSync(DB_PATH, JSON.stringify(empty, null, 2));
+    return empty;
   }
-  _db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS sessions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      cert_id TEXT NOT NULL DEFAULT 'google-ai-leadership',
-      score INTEGER NOT NULL,
-      total INTEGER NOT NULL,
-      started_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS question_results (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
-      category TEXT NOT NULL,
-      question_text TEXT NOT NULL,
-      correct INTEGER NOT NULL
-    );
-  `);
-  _save();
-  return _db;
+  return JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
 }
 
-function _save() {
-  if (!_db) return;
-  const data = _db.export();
-  fs.writeFileSync(DB_PATH, Buffer.from(data));
+function save(data) {
+  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
 }
 
-function run(sql, params = []) {
-  _db.run(sql, params);
-  _save();
-  const res = _db.exec("SELECT last_insert_rowid() as id");
-  return { lastInsertRowid: res[0]?.values[0][0] };
-}
+const db = {
+  // Users
+  createUser(email, password_hash) {
+    const data = load();
+    if (data.users.find(u => u.email === email)) throw new Error("UNIQUE constraint failed");
+    const user = { id: Date.now(), email, password_hash, created_at: new Date().toISOString() };
+    data.users.push(user);
+    save(data);
+    return user;
+  },
+  getUserByEmail(email) {
+    return load().users.find(u => u.email === email) || null;
+  },
 
-function get(sql, params = []) {
-  const stmt = _db.prepare(sql);
-  stmt.bind(params);
-  if (stmt.step()) {
-    const row = stmt.getAsObject();
-    stmt.free();
-    return row;
+  // Sessions
+  createSession(user_id, cert_id, score, total) {
+    const data = load();
+    const session = { id: Date.now(), user_id, cert_id, score, total, started_at: new Date().toISOString() };
+    data.sessions.push(session);
+    save(data);
+    return session;
+  },
+
+  // Question results
+  createResults(session_id, user_id, results) {
+    const data = load();
+    for (const r of results) {
+      data.question_results.push({
+        id: crypto.randomInt(1000000),
+        session_id, user_id,
+        category: r.category,
+        question_text: r.question_text,
+        correct: r.correct ? 1 : 0
+      });
+    }
+    save(data);
+  },
+
+  // Progress summary
+  getSummary(user_id, cert_id) {
+    const data = load();
+    const sessions = data.sessions
+      .filter(s => s.user_id === user_id && s.cert_id === cert_id)
+      .sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+
+    const myResults = data.question_results.filter(r => r.user_id === user_id);
+
+    // Category stats
+    const catMap = {};
+    for (const r of myResults) {
+      if (!catMap[r.category]) catMap[r.category] = { total: 0, correct: 0 };
+      catMap[r.category].total++;
+      if (r.correct) catMap[r.category].correct++;
+    }
+    const categoryStats = Object.entries(catMap).map(([category, s]) => ({
+      category,
+      total: s.total,
+      correct: s.correct,
+      accuracy: Math.round((s.correct / s.total) * 100 * 10) / 10
+    })).sort((a, b) => a.accuracy - b.accuracy);
+
+    const weakCategories = categoryStats
+      .filter(c => c.accuracy < 70)
+      .map(c => ({ category: c.category, accuracy: c.accuracy, total: c.total }));
+
+    return {
+      sessions: sessions.slice(0, 10),
+      categoryStats,
+      weakCategories,
+      latest: sessions[0] || null,
+      totalSessions: sessions.length
+    };
   }
-  stmt.free();
-  return null;
-}
+};
 
-function all(sql, params = []) {
-  const stmt = _db.prepare(sql);
-  stmt.bind(params);
-  const rows = [];
-  while (stmt.step()) rows.push(stmt.getAsObject());
-  stmt.free();
-  return rows;
-}
-
-module.exports = { getDb, run, get, all };
+module.exports = db;
