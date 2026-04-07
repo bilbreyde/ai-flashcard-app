@@ -1,4 +1,4 @@
-const BASE = process.env.REACT_APP_API_URL || "https://ai-flashcard-app-apb0f0fabmfucjgj.eastus2-01.azurewebsites.net";
+const BASE = "https://ai-flashcard-app-apb0f0fabmfucjgj.eastus2-01.azurewebsites.net";
 
 async function request(path, options = {}) {
   const token = localStorage.getItem("token");
