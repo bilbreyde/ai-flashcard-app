@@ -6,3 +6,6 @@ server/.env
 server/flashcards.db
 .env
 *.db
+
+release.zip
+deploy-temp/

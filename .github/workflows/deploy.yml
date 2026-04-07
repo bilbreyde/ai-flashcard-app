@@ -30,7 +30,7 @@ jobs:
           cp -r server deploy/server
           cp -r client/build deploy/client
           cp package.json deploy/
-          cd deploy && zip -r ../release.zip .
+          cd deploy && zip -r ../release.zip . --exclude "*.map"
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
